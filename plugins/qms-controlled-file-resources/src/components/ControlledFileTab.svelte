@@ -15,6 +15,9 @@
 <script lang="ts">
   import { type Blob as PlatformBlob, type Doc, type Ref, type WithLookup, SortingOrder } from '@hcengineering/core'
   import { type ControlledDocument, type Document } from '@hcengineering/controlled-documents'
+  // QMS Milestone 4 (PG-004): reuse the existing document-status badge (same component the
+  // main document list/grid uses) instead of inventing new status colors/labels here.
+  import { StatePresenter } from '@hcengineering/controlled-documents-resources'
   import drive, { type File as DriveFile, type FileVersion } from '@hcengineering/drive'
   import { FilePreview, createQuery, getClient, getFileUrl } from '@hcengineering/presentation'
   import qmsControlledFile, { type ControlledFile } from '@hcengineering/qms-controlled-file'
@@ -97,6 +100,13 @@
 </script>
 
 <div class="flex-col flex-gap-4 p-4">
+  {#if controlledDoc !== undefined}
+    <!-- QMS Milestone 4 (PG-004): make the lifecycle state governing this linked file
+         unmistakable (Draft/In Review/In Approval/Effective/Obsolete), same badge used
+         throughout the document list. -->
+    <StatePresenter value={controlledDoc} />
+  {/if}
+
   {#if fileRef == null}
     <div class="flex-col flex-gap-2">
       <Label label={qmsControlledFile.string.NoFileLinked} />

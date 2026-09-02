@@ -43,6 +43,7 @@
     "@hcengineering/presentation": "workspace:^0.7.0",
     "@hcengineering/qms-controlled-file": "workspace:^0.7.0",
     "@hcengineering/controlled-documents": "workspace:^0.7.0",
+    "@hcengineering/controlled-documents-resources": "workspace:^0.7.0",
     "@hcengineering/drive": "workspace:^0.7.0",
     "@hcengineering/view-resources": "workspace:^0.7.0",
     "@hcengineering/ui": "workspace:^0.7.0",
