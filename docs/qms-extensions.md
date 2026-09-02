@@ -267,3 +267,86 @@ resolved through the existing front server.
 - **No lifecycle/locking yet** (by design — that's Milestone 4/PG-004/PG-018): a file can still
   be replaced in Drive directly, or relinked to a different file, at any document state
   including Effective. Milestone 4 needs to close this gap.
+
+---
+
+## Milestone 4 — Lifecycle integration (PG-004)
+
+**Classification: mostly VERIFICATION (no change needed) + two small PLUGIN/EXTENSION-adjacent
+fixes.** No new packages this milestone.
+
+**Scope note:** the brief's Milestone 4 text ("Apply Draft→Review→Approval→Effective→Obsolete...")
+overlaps with Milestone 5 ("Revision protection... prevent released content from being silently
+modified"), but the brief's own DEVELOPMENT ORDER keeps them separate. **This milestone does NOT
+add any enforcement/locking that blocks replacing a linked file on an Effective document** — that
+is Milestone 5. Do not read the absence of locking below as an oversight.
+
+### What was verified, not changed
+
+Because Milestone 3 put the `ControlledFile` mixin directly on `documents.class.Document` (not a
+separate entity), a file-based Controlled Document *is* an ordinary `ControlledDocument` with an
+extra field — so TraceX's existing review/approval workflow already operates on it correctly, with
+zero special-casing. Confirmed by reading current source, not assumed:
+
+- `canSendForReview` (`plugins/controlled-documents-resources/src/stores/editors/document/canSendForReview.ts`)
+  and `canSendForApproval` (same dir) gate purely on `state`/`controlledState`/comments-resolved/
+  training-released/ownership — no reference to `document.content` anywhere in either file.
+- `grep -n '\.content\b'` across `plugins/controlled-documents-resources/src/utils.ts` (which holds
+  `sendReviewRequest`/`sendApprovalRequest`/`completeRequest`/`rejectRequest`) and across
+  `server-plugins/controlled-documents-resources/src/index.ts` (which holds `OnDocHasBecomeEffective`
+  and the rest of the trigger chain) returns **zero matches** — none of the request/approval/
+  effective-transition machinery touches rich-text content, so a `content: null` file-based document
+  flows through identically to a rich-text one.
+
+Conclusion: the lifecycle *state machine and workflow* required no code changes. What was actually
+missing was **data continuity across revisions** and **visibility**, addressed below.
+
+### Changed modules
+
+| Module | Change | Classification |
+|---|---|---|
+| `plugins/controlled-documents-resources/src/docutils.ts` | `createNewDraftForControlledDoc` already manually carries the `DocumentTemplate` mixin onto each new revision's document id (see the existing block right above the new one). Added an identical block for the QMS `ControlledFile` mixin: if the source revision has a linked Drive file, the new draft revision gets the same `controlledFile` ref via `ops.updateMixin`. Without this, creating a new revision from a file-based document silently lost the file link — the new revision's Controlled File tab would show "no file linked" even though the old revision still had one. ~10 lines, same shape as the existing template block, one new id-only import (`@hcengineering/qms-controlled-file`, already a dependency of this package since Milestone 3). | CORE-ADJACENT PATCH (small, isolated, mirrors an existing pattern in the same function — not a restructure) |
+| `plugins/qms-controlled-file-resources/src/components/ControlledFileTab.svelte` | Added a `StatePresenter` (imported from `@hcengineering/controlled-documents-resources`, the exact same badge component the main document list/grid uses) near the top of the tab, so the lifecycle state governing the linked file is unmistakable — serves PG-017 without implementing it as its own milestone. | PLUGIN/EXTENSION |
+| `plugins/qms-controlled-file-resources/package.json` | Added `@hcengineering/controlled-documents-resources` dependency for the above import. No cycle: `controlled-documents-resources` depends only on the base `qms-controlled-file` package (id-only), never on `qms-controlled-file-resources`. | CONFIGURATION |
+
+### DocumentSnapshot: no change needed
+
+`createDocumentSnapshotAndEdit` (`docutils.ts`) creates a `ControlledDocumentSnapshot` (a
+point-in-time content capture) and resets `controlledState` — but it operates on the **same
+document id** (`document._id`), it does not create a new revision. Mixin data is addressed by
+object id, so the `ControlledFile` mixin stays attached to the live document automatically; nothing
+to carry forward here. Only `createNewDraftForControlledDoc` (which mints a *new* document id) needed
+the fix above.
+
+### Rollback
+
+1. `git revert` this milestone's two commits (or reset to the commit before them, if nothing has
+   landed on top).
+2. No data migration exists to reverse. Any `ControlledFile` mixin data already carried onto a new
+   revision by the fix is harmless to leave in place even after reverting the code — it's just an
+   inert field value, not something with side effects.
+
+### Manual verification steps
+
+1. `rush build` (no new dependencies beyond the already-existing `qms-controlled-file` /
+   `controlled-documents-resources` workspace packages, so `rush install` is not required, but run
+   it if in doubt).
+2. In the running app: open a Controlled Document that already has a linked Drive file (Milestone 3
+   setup), confirm the **File** tab now shows a status badge (Draft/In Review/etc.) at the top.
+3. Send it through Review → Approval → Effective (or just Draft → Effective for a document with no
+   reviewers/approvers configured) and confirm the badge updates live.
+4. Create a new revision (major or minor) from that document. Open the new Draft revision's **File**
+   tab and confirm the same Drive file is still linked (this is the regression the fix targets —
+   before this milestone, the new revision would show "no file linked").
+5. Confirm nothing else changed: sending a rich-text-only (no linked file) Controlled Document
+   through the same review/approval flow behaves exactly as it did before this milestone.
+
+### Follow-up decisions flagged, not made unilaterally
+
+- **No locking/enforcement**: confirmed by design, not an oversight — see the scope note above.
+  A linked file can still be freely replaced or relinked at any document state, including
+  Effective. This is exactly what Milestone 5 (PG-004's other half, plus PG-018) needs to close.
+- **New-revision file carry-forward always re-links the same File, never resets it**: this seems
+  like the right default (mirrors "same document, new content" the same way Drive's own versioning
+  works), but if a future workflow wants a new revision to start with *no* file linked (forcing an
+  explicit re-link), that would need a small opt-out — not built speculatively here.
