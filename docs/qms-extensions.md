@@ -629,3 +629,35 @@ addition is fully self-contained in one array entry; reverting it leaves the pre
   `controlled-documents` plugin's strings — renaming it would be a small edit to that upstream
   package, not this milestone's additive packages) is a cosmetic decision left to the user/pilot,
   not made here.
+
+---
+
+## Milestone 7 — Interactive document research (PG-011)
+
+**Classification: RESEARCH ONLY — no code changes.** Full analysis in
+[`docs/qms-editor-extensions.md`](./qms-editor-extensions.md).
+
+**Headline finding:** Huly's collaborative rich-text editor schema is closed — a new package
+cannot register a genuinely new interactive Node/Mark type without patching
+`plugins/text-editor-resources` directly (a real CORE PATCH). The evidence is Huly's own prior
+art: the existing QMS inline-comment feature (`qmsInlineComment`) was itself built that way, by
+the platform team, with no external plugin option available — and its own source comment flags it
+as "semi-deprecated." `EmbedNode`'s provider list is a smaller, partially-open door (a small
+patch, similar in size to Milestone 5's `pipeline.ts` change) but is still a hardcoded array, not
+a model-doc registry like `FilePreviewExtension` or `Viewlet`.
+
+The good news: `@mention` references (`ReferenceExtension`) already work generically over any
+Huly object today, and tables/todo-lists are already standard editor features — so document
+references, linked tasks, and a responsibility-matrix-as-table are usable with **zero new code**.
+Approval blocks, revision info, and training requirements are already fully solved *outside* the
+document body (document panel, not `content`). Only process-flow diagrams and any genuinely novel
+inline-interactive widget would need real editor-schema work, and the recommendation is to defer
+those until a concrete pilot need justifies the CORE PATCH cost — see the proposal table in
+`docs/qms-editor-extensions.md` for the full per-component breakdown and the recommended
+lowest-risk next prototype (a `ControlledDocument` `EmbedNodeProvider`, not a new Node type).
+
+### Follow-up decisions flagged, not made unilaterally
+
+- Whether to prototype the recommended `EmbedNodeProvider` in a future milestone, or defer
+  further editor work entirely until the pilot surfaces a concrete need for inline interactive
+  content beyond what `@mention`/tables/todo-lists already provide.
