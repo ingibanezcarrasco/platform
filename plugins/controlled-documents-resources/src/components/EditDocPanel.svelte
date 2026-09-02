@@ -25,6 +25,10 @@
   import { Panel } from '@hcengineering/panel'
   import { getResource, setPlatformStatus, unknownError } from '@hcengineering/platform'
   import { getClient } from '@hcengineering/presentation'
+  // QMS Milestone 3 (PG-003): id-only import (no logic) to inject the Controlled File tab
+  // below — there is no generic extension point for panel tabs today, this is this
+  // milestone's one core-adjacent change. See docs/qms-extensions.md.
+  import qmsControlledFile from '@hcengineering/qms-controlled-file'
   import { Collaboration } from '@hcengineering/text-editor-resources'
   import {
     Button,
@@ -162,6 +166,17 @@
       label: documentRes.string.HistoryTab,
       component: DocumentHistory,
       props: {}
+    },
+    // QMS Milestone 3 (PG-003): resolved dynamically by plugin id string, same as every
+    // other cross-plugin AnyComponent reference — no hard dependency on the resources
+    // package that implements it (see Tabs.svelte's `typeof tab.component === 'string'` path).
+    {
+      label: qmsControlledFile.string.ControlledFileTab,
+      component: qmsControlledFile.component.ControlledFileTab,
+      props: {
+        controlledDoc: $controlledDocument,
+        editable: $isDocumentOwner
+      }
     }
   ]
 
