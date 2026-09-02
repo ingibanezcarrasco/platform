@@ -203,6 +203,20 @@ export async function createServer (ctx: MeasureContext, config: Config): Promis
     })
   )
 
+  app.get(
+    '/pdf/:workspace/:name',
+    withAuthorization,
+    withBlob,
+    wrapRequest(ctx, 'getOfficePdf', async (ctx, req, res) => {
+      const workspace = req.params.workspace as WorkspaceUuid
+      const name = req.params.name
+
+      const result = await service.officePdf(ctx, workspace, name)
+      res.setHeader('Cache-Control', cacheControlNoCache)
+      res.status(200).json({ file: result.blobName, cached: result.cached })
+    })
+  )
+
   app.get('/api/v1/statistics', (req, res) => {
     try {
       const token = req.query.token as string

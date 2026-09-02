@@ -13,7 +13,7 @@
 // limitations under the License.
 //
 
-export { DocProvider } from './doc'
+export { DocProvider, isOfficeDocument } from './doc'
 export { ImageProvider } from './image'
 export { FallbackProvider } from './fallback'
 export { PdfProvider } from './pdf'

@@ -64,11 +64,65 @@ function getFileExtension (contentType: string): string {
   return extensions[mimeType] ?? ''
 }
 
+// Subset of `extensions` that LibreOffice can meaningfully convert to a full,
+// multi-page PDF for inline preview. Deliberately excludes JSON/YAML (thumbnail-only,
+// not a "document" in the QMS sense) and plain RTF is kept since it's a real document format.
+const OFFICE_DOCUMENT_MIME_TYPES = new Set<string>([
+  DOCX_MIME_TYPE,
+  DOC_MIME_TYPE,
+  PPTX_MIME_TYPE,
+  PPT_MIME_TYPE,
+  XLSX_MIME_TYPE,
+  XLS_MIME_TYPE,
+  ODT_MIME_TYPE,
+  ODS_MIME_TYPE,
+  ODP_MIME_TYPE,
+  RTF_MIME_TYPE_1,
+  RTF_MIME_TYPE_2
+])
+
+export function isOfficeDocument (contentType: string): boolean {
+  const mimeType = contentType.split(';')[0].trim().toLowerCase()
+  return OFFICE_DOCUMENT_MIME_TYPES.has(mimeType)
+}
+
 export class DocProvider implements PreviewProvider {
   constructor (
     private readonly storage: StorageAdapter,
     private readonly tempDir: TemporaryDir
   ) {}
+
+  /**
+   * Converts the source Office document to a full PDF and returns the temporary file path.
+   * Unlike `image()`, the PDF is NOT reduced to a single-page thumbnail — callers that need
+   * the full multi-page document (e.g. persisting it as a cached preview blob) should use
+   * this instead of `image()` + re-deriving the PDF.
+   *
+   * Caller is responsible for removing the returned file (via `this.tempDir.rm(...)`) once done.
+   */
+  async pdf (ctx: MeasureContext, workspace: WorkspaceUuid, name: string, contentType: string): Promise<PreviewFile> {
+    const tmpFile = this.tempDir.tmpFile()
+    const docFile = tmpFile + getFileExtension(contentType)
+    let pdfFile = tmpFile + '.pdf'
+
+    try {
+      await ctx.with('blob-read', {}, async (ctx) => {
+        const stream = await this.storage.get(ctx, { uuid: workspace } as any, name)
+        await pipeline(stream, createWriteStream(docFile))
+      })
+
+      pdfFile = await ctx.with('doc-to-pdf', {}, (ctx) => {
+        return docToPdf(ctx, docFile)
+      })
+    } catch (err: any) {
+      this.tempDir.rm(docFile, pdfFile)
+      throw err
+    } finally {
+      this.tempDir.rm(docFile)
+    }
+
+    return { mimeType: 'application/pdf', filePath: pdfFile }
+  }
 
   supports (contentType: string): boolean {
     const mimeType = contentType.split(';')[0].trim().toLowerCase()
