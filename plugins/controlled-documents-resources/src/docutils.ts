@@ -46,6 +46,9 @@ import documents, {
 import { getCurrentEmployee } from '@hcengineering/contact'
 // QMS Milestone 4 (PG-004): base plugin, id-only import — see the carry-forward block below.
 import qmsControlledFile, { type ControlledFile } from '@hcengineering/qms-controlled-file'
+// QMS Milestone 5 (PG-018): `createFile` to give the new revision its own Drive File — see
+// the carry-forward block below for why it can no longer reuse the old revision's File.
+import drive, { createFile } from '@hcengineering/drive'
 import documentsRes from './plugin'
 import { getDocumentVersionString } from './utils'
 
@@ -168,18 +171,50 @@ export async function createNewDraftForControlledDoc (
     })
   }
 
-  // QMS Milestone 4 (PG-004): carry the linked Drive file forward onto the new revision.
-  // Mixin data does not copy automatically to a new document id — without this, creating a
-  // new revision from a file-based Controlled Document would silently lose its file link,
-  // and the new revision's Controlled File tab would show "no file linked". The new revision
-  // points at the *same* Drive File; a new FileVersion is expected to be uploaded to it during
-  // this revision's Draft/Review cycle, mirroring how Drive itself only ever creates a new
-  // FileVersion (never a new File) for a new version of the same content.
+  // QMS Milestone 4 (PG-004), revised in Milestone 5 (PG-018): carry the linked Drive file
+  // forward onto the new revision. Mixin data does not copy automatically to a new document id
+  // — without this, creating a new revision from a file-based Controlled Document would
+  // silently lose its file link, and the new revision's Controlled File tab would show
+  // "no file linked".
+  //
+  // Milestone 4 originally pointed the new revision at the *same* Drive File as the old one.
+  // That breaks once Milestone 5's lock exists: the old revision stays Effective (it only
+  // becomes Obsolete when *this* new revision itself later becomes Effective), and Drive's
+  // `File.file` "current version" pointer is a single value shared by whichever documents
+  // reference that File — so uploading a new version for the new Draft revision would silently
+  // change what the still-Effective old revision's File tab displays too, AND would be rejected
+  // outright by the Milestone 5 lock (the File is still `controlledFile` of an Effective
+  // document). Each revision needs its own File for the two to stay independent, mirroring how
+  // Huly's native rich-text documents already work: `docSpec.content` above starts as a *copy*
+  // of the old revision's markup (`document.content`), not a shared reference to the same blob.
+  //
+  // So: give the new revision a brand-new Drive File, in the same Drive/folder as the old one,
+  // whose initial FileVersion points at the SAME underlying Blob as the old File's current
+  // version (a cheap metadata-only copy, no byte duplication — Blobs are immutable content, so
+  // sharing one across two independent FileVersion records is safe to read). The user uploads a
+  // real new version into this new File during the new revision's Draft/Review cycle; the old
+  // File, and the released revision that still points at it, are never touched.
   if (hierarchy.hasMixin(document, qmsControlledFile.mixin.ControlledFile)) {
     const controlledFile = hierarchy.as<Document, ControlledFile>(document, qmsControlledFile.mixin.ControlledFile)
-    await ops.updateMixin(newDraftDocId, documents.class.Document, space, qmsControlledFile.mixin.ControlledFile, {
-      controlledFile: controlledFile.controlledFile
-    })
+    const oldFileId = controlledFile.controlledFile
+    if (oldFileId != null) {
+      const oldFile = await client.findOne(drive.class.File, { _id: oldFileId })
+      const oldVersion =
+        oldFile !== undefined ? await client.findOne(drive.class.FileVersion, { _id: oldFile.file }) : undefined
+      if (oldFile !== undefined && oldVersion !== undefined) {
+        const newFileId = await createFile(ops, oldFile.space, oldFile.parent, {
+          title: oldVersion.title,
+          file: oldVersion.file,
+          size: oldVersion.size,
+          type: oldVersion.type,
+          lastModified: Date.now(),
+          metadata: oldVersion.metadata
+        })
+        await ops.updateMixin(newDraftDocId, documents.class.Document, space, qmsControlledFile.mixin.ControlledFile, {
+          controlledFile: newFileId
+        })
+      }
+    }
   }
 
   const documentTraining = getDocumentTraining(hierarchy, document)
