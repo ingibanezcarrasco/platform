@@ -510,3 +510,122 @@ This milestone's blast radius is a live production risk if the lock over- or und
   superseded (each revision's File is independent now, so this is actually *less* of a growth
   concern than before — each File's version count only reflects that one revision's own edit
   history, not the whole document lineage). No cleanup/archival built; not asked for.
+
+---
+
+## Milestone 6 — Document Registry (PG-016)
+
+**Classification: mostly CONFIGURATION (nothing built already existed), one CORE-ADJACENT
+column addition.**
+
+### The main finding: the Document Registry already exists
+
+Before writing any code, investigated how controlled-documents lets you browse documents today
+(`plugins/controlled-documents-resources/src/index.ts`, `models/controlled-documents/src/index.ts`).
+Result: the brief's ask — "a centralized Document Registry view, filterable by status/process/
+department/document type/owner, preferring existing Huly views over an isolated application" —
+**is already almost entirely built and already shipping**, under the name **"Library"**:
+
+- `models/controlled-documents/src/index.ts` (~line 204-224) registers a `special` nav entry
+  `id: 'library'` in the Documents app, rendering `documents.component.DocumentsContainer` with
+  query `{ [documents.mixin.DocumentTemplate]: { $exists: false } }` — **no `space`/Project
+  filter**, i.e. it already spans every Project. Mode tabs: Effective / In Progress / Archived /
+  Obsolete / All.
+- `DocumentsContainer.svelte` → `Documents.svelte` → `ViewletPanelHeader` resolves the Viewlet
+  registered at `documents.viewlet.TableDocument` (same file, ~line 298-355): a `Table`-descriptor
+  Viewlet attached to `documents.class.Document` with columns **ID, Title, Status, Version,
+  Project(`space`), Category, Template, Template Version, Owner, Labels, Modified On** — i.e.
+  Document ID / Title / Type(-via-Category) / Revision / Status / Owner from the brief's column
+  list, already present, already sortable.
+- `builder.mixin(documents.class.Document, core.class.Class, view.mixin.ClassFilters, {...})`
+  (same file, ~line 712-738) already registers **filtering by `state` (Status), `owner`,
+  `category` (Type), `space` (Project), plus title/prefix/labels/major/minor/author/modifiedOn**
+  — i.e. the brief's "filter by status / document type / owner" is already live, using the
+  platform's standard generic filter bar. No new filter UI was needed or built.
+
+Given this, re-implementing a "Document Registry" as a new app/view would have been pure
+duplication — directly against the brief's own "prefer extending existing Huly views" rule and
+the top-level "do not create unnecessary deep modifications" principle. **This milestone's actual
+work was to identify this, add the one genuinely missing column, and honestly flag the two
+columns nothing backs.**
+
+### What changed
+
+| Module | Change | Classification |
+|---|---|---|
+| `models/controlled-documents/src/index.ts` | Added one entry, `{ key: 'effectiveDate', label: documents.string.EffectiveDate }`, to the existing `documents.viewlet.TableDocument` config array (~line 348). | CORE-ADJACENT (see below) |
+
+Nothing else was touched. No new packages, no new model classes, no server changes, no docker/env
+changes.
+
+### Why this one column addition is safe (verified, not assumed)
+
+`effectiveDate` is declared on `ControlledDocument` (`plugins/controlled-documents/src/types.ts:215`),
+not on the base `documents.class.Document` this Viewlet's `attachTo` targets. Verified this is
+still safe to add as a bare `{ key, label }` entry:
+- `Viewlet.config: (BuildModelKey | string)[]` (`plugins/view/src/types.ts:460`) is not typed
+  against `keyof` the attach class — it's a generic string/object array. No TypeScript error is
+  possible from referencing a subclass-only field name.
+- The existing config array already ends in a bare `'modifiedOn'` string entry with no explicit
+  presenter, proving the "plain field key, default presenter" pattern is already used and working
+  in this exact Viewlet — `effectiveDate` (a `Timestamp`) follows the identical pattern.
+- `configOptions.strict: true` on this Viewlet is a *runtime* rendering-mode flag
+  (`ViewletConfigOptions` in `plugins/view/src/types.ts:472`, no attachment to model-build
+  validation) — not a build-time or model-validation constraint that could reject this field.
+- At runtime, rows that are plain (non-controlled) `Document`s simply have `effectiveDate ===
+  undefined` and render a blank cell — no crash, no special-casing needed.
+
+This is a one-line, low-risk, precedent-following addition — kept as a "core-adjacent" change
+(not "CONFIGURATION") only because it touches a file inside `models/controlled-documents`, per
+this project's own classification convention; it does not rewrite or restructure anything.
+
+### Deferred, not built: "Department" and "Process" columns
+
+The brief's example columns include Type / **Department** / **Process**. Investigated whether
+anything backs Department or Process today:
+- `DocumentCategory` (the `category` ref, already shown as the Registry's "Type"-ish column) has
+  fields `code`, `title`, `description` only (`plugins/controlled-documents/src/types.ts`) — no
+  department/process concept.
+- `DocumentSpace`/`Project` (the `space` a document lives in) is an organizational grouping, not
+  a department or process field, and is already shown as its own "Project" column — conflating it
+  with "Department" or "Process" would be a wrong, confusing reuse, not a real mapping.
+- No other field on `Document`/`ControlledDocument` backs either concept.
+
+**Not implemented.** Inventing a new required field/mixin to fill two columns with no real backing
+data yet would be exactly the kind of speculative modeling the brief itself warns against
+elsewhere (PG-010: "First create a reusable architecture... do not implement every object now").
+Flagged below as a follow-up decision for the pilot, not decided unilaterally.
+
+### Rollback
+
+`git revert` the single commit (`9b5848143` — see `git log` on `custom/qms-tpp`). The column
+addition is fully self-contained in one array entry; reverting it leaves the pre-existing
+"Library" view and its filters completely untouched and working exactly as before this milestone.
+
+### Manual verification steps
+
+1. `rush build` (compiles the changed model package this file lives in; no new dependencies, no
+   new packages — fast to verify relative to prior milestones).
+2. Open the Documents app → **Library** in the left navigator. Confirm it lists documents across
+   every Project (not scoped to one), with mode tabs Effective/In Progress/Archived/Obsolete/All.
+3. Confirm the table shows an **Effective Date** column, populated for Effective/Obsolete
+   documents and blank for Draft ones (no `effectiveDate` set yet).
+4. Open the filter bar and confirm Status, Owner, Category, and Project are all filterable —
+   this was already working before this milestone; verify it's still intact after the change.
+5. Confirm "My Documents" (the other consumer of the same underlying components, scoped to
+   `owner: currentEmployee`) is unaffected and still renders correctly with the new column.
+
+### Follow-up decisions flagged, not made unilaterally
+
+- **Department / Process columns**: no backing data model exists yet. Options for a future
+  milestone: (a) a new mixin on `Document` with `department`/`process` reference or free-text
+  fields, mirroring the `ControlledFile` mixin's external-package pattern from Milestone 3; (b)
+  repurpose `DocumentCategory` more broadly if the pilot's category taxonomy naturally maps to
+  departments; (c) determine these are out of scope for the TPP pilot's actual reporting needs
+  and drop them from the target column list entirely. Needs a decision from whoever owns the
+  QMS taxonomy, not a unilateral schema choice.
+- **"Library" naming**: the existing nav label is "Library," not "Document Registry" or
+  "Registry." Whether to rename it (a `documents.string.Library` label lives in the base
+  `controlled-documents` plugin's strings — renaming it would be a small edit to that upstream
+  package, not this milestone's additive packages) is a cosmetic decision left to the user/pilot,
+  not made here.
