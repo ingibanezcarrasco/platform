@@ -1,0 +1,11 @@
+{
+  "string": {
+    "ControlledFile": "Controlled File",
+    "ControlledFileTab": "File",
+    "SelectFile": "Select file",
+    "ChangeFile": "Change file",
+    "NoFileLinked": "No file linked. Link a Drive file to control it in its native format.",
+    "Download": "Download",
+    "FileVersions": "File versions"
+  }
+}

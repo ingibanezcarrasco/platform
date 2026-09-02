@@ -1937,6 +1937,26 @@
       "shouldPublish": false
     },
     {
+      "packageName": "@hcengineering/qms-controlled-file",
+      "projectFolder": "plugins/qms-controlled-file",
+      "shouldPublish": true
+    },
+    {
+      "packageName": "@hcengineering/qms-controlled-file-assets",
+      "projectFolder": "plugins/qms-controlled-file-assets",
+      "shouldPublish": false
+    },
+    {
+      "packageName": "@hcengineering/qms-controlled-file-resources",
+      "projectFolder": "plugins/qms-controlled-file-resources",
+      "shouldPublish": false
+    },
+    {
+      "packageName": "@hcengineering/model-qms-controlled-file",
+      "projectFolder": "models/qms-controlled-file",
+      "shouldPublish": false
+    },
+    {
       "packageName": "@hcengineering/server-drive",
       "projectFolder": "server-plugins/drive",
       "shouldPublish": false

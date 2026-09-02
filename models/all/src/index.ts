@@ -30,6 +30,7 @@ import { desktopDownloadsId, createModel as desktopDownloadsModel } from '@hceng
 import { desktopPreferencesId, createModel as desktopPreferencesModel } from '@hcengineering/model-desktop-preferences'
 import { driveId, createModel as driveModel } from '@hcengineering/model-drive'
 import { qmsOfficePreviewId, createModel as qmsOfficePreviewModel } from '@hcengineering/model-qms-office-preview'
+import { qmsControlledFileId, createModel as qmsControlledFileModel } from '@hcengineering/model-qms-controlled-file'
 import gmail, { gmailId, createModel as gmailModel } from '@hcengineering/model-gmail'
 import { guestId, createModel as guestModel } from '@hcengineering/model-guest'
 import hr, { hrId, createModel as hrModel } from '@hcengineering/model-hr'
@@ -430,6 +431,10 @@ export default function buildModel (): Builder {
         classFilter: defaultFilter
       }
     ],
+    // QMS Milestone 3 (PG-003): registers a mixin on documents.class.Document only, no
+    // user-facing app/toggle — always active. Must build after both driveModel (needs
+    // drive.class.File) and documentsModel (needs documents.class.Document) above.
+    [qmsControlledFileModel, qmsControlledFileId],
     [
       questionsModel,
       questionsId,
