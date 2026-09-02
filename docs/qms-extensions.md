@@ -350,3 +350,163 @@ the fix above.
   like the right default (mirrors "same document, new content" the same way Drive's own versioning
   works), but if a future workflow wants a new revision to start with *no* file linked (forcing an
   explicit re-link), that would need a small opt-out — not built speculatively here.
+- **Correction, made in Milestone 5**: the "same File" assumption above turned out to be wrong
+  once PG-018 locking exists — see Milestone 5's section below for why, and what changed. The new
+  revision now gets its own Drive File (an initial-version copy of the old one), not a reference
+  to the same File `_id`. Flagging this here so the history of the decision stays visible instead
+  of silently rewriting this section.
+
+---
+
+## Milestone 5 — Revision protection + audit trail (PG-018 / PG-008)
+
+**Goal:** "Prevent released content from being silently modified. Implement revision history and
+event tracking." Concretely, the brief's own acceptance test: take an Effective XLSX document,
+attempt to replace its file, and the system must never allow it to silently succeed while the
+revision number stays put.
+
+### Part A — PG-018: blocking the replacement (the real technical work)
+
+**Classification: NEW SERVICE** (a genuine pre-commit server `Middleware`, not a reactive
+`Trigger` — triggers in this codebase only run *after* a transaction is already applied and
+cannot block anything; confirmed by reading `foundations/server/packages/middleware/src/
+spacePermissions.ts`, which is one of only two places in the codebase that actually rejects a
+transaction before commit) **+ a 2-line CONFIGURATION change** to wire it into the pipeline.
+
+**Precedent used:** `server-plugins/rating`'s `RatingMiddleware` is a near-exact structural match
+for this need (inspect incoming `TxCUD` shapes in `tx()`, throw a plain `Error` to reject before
+`this.provideTx(...)` is called, registered as its own standalone package directly in
+`server/server-pipeline/src/pipeline.ts`'s middleware list — not through the plugin/trigger-
+resource indirection that `server-plugins/drive`'s `OnFileVersionDelete` trigger uses, because
+middleware isn't wired that way in this codebase). New package `server-plugins/qms-controlled-
+file` (`@hcengineering/server-qms-controlled-file`) follows that exact template.
+
+| Module | Change |
+|---|---|
+| `server-plugins/qms-controlled-file` (new package) | `QmsControlledFileLockMiddleware`: rejects (a) `TxCreateDoc<FileVersion>` (a new version upload) and (b) `TxUpdateDoc<File>` with `operations.file` set (`restoreFileVersion()` repointing "current version" at an older one) whenever the target Drive `File` is the `controlledFile` of a `ControlledDocument` in `DocumentState.Effective`. |
+| `server/server-pipeline/src/pipeline.ts` | +2 lines: import, and one entry in `createServerPipeline`'s `middlewares` array, positioned right after `RatingMiddleware.create` (i.e. after `ApplyTxMiddleware`, which already unwraps `TxApplyIf` batches into flat txes — see the code comment for why the middleware's own `TxApplyIf`-handling branch is defense-in-depth, not the primary path). Not added to `createBackupPipeline`, matching `RatingMiddleware`'s own choice. |
+| `server/server-pipeline/package.json`, `rush.json` | dependency + project-list wiring, same shape as every prior milestone's new package. |
+
+**Why both TxCreateDoc and TxUpdateDoc are checked:** a first pass only blocked new-`FileVersion`
+uploads (the brief's literal example). But Drive also lets you *restore* an older version
+(`restoreFileVersion()`, a plain `TxUpdateDoc<File>` with `operations.file` set to an older
+`FileVersion` ref, no new version created) — that's a second, equally silent way to change what
+"the current file" means for an Effective document, so it needed the identical guard. Renaming a
+file's title, or any other `File`/`FileVersion` metadata edit, is deliberately **not** blocked —
+scoped strictly to the two operations that change *content identity*.
+
+**Query mechanics worth calling out:** the middleware queries `documents.class.Document` (the
+base class) with a plain field name `controlledFile`, even though that field only exists on the
+`ControlledFile` mixin from Milestone 3. This works because the Mongo adapter auto-resolves a bare
+field name to its owning mixin's storage path when it isn't found on the base class
+(`checkMixinKey` in `foundations/server/packages/mongo/src/storage.ts`) — confirmed by reading
+that function, not assumed. No mixin class ref needs to appear in the query.
+
+### A cross-milestone bug found and fixed while implementing Part A
+
+Milestone 4's revision carry-forward pointed a new Draft revision at the **same** Drive File as
+the revision it was drafted from. That's fine in isolation, but combined with this milestone's
+lock it's actively broken: the *old* revision stays `Effective` until the *new* one itself becomes
+Effective (see `OnDocHasBecomeEffective` in Milestone 1's research), so both revisions would
+reference the same File at the same time — meaning the moment a Draft author tried to upload their
+first real new version, this milestone's own lock would reject it, because the File is still the
+`controlledFile` of the (still Effective) old revision. **File-based revisions would have been
+unable to ever start editing**, a full workflow break, not a minor edge case.
+
+**Fix** (`plugins/controlled-documents-resources/src/docutils.ts`, inside
+`createNewDraftForControlledDoc`): the new revision now gets its **own** new Drive `File` (via
+`@hcengineering/drive`'s `createFile`), created in the same Drive/folder as the old one, with its
+initial `FileVersion` pointing at the **same underlying `Blob`** as the old File's current version
+— a metadata-only copy (no byte duplication; `Blob`s are immutable content, so two independent
+`FileVersion` records safely reading the same one is fine). This mirrors how Huly's own
+native rich-text documents already work: `docSpec.content` in the same function starts as a *copy*
+of the old revision's markup, never a shared reference. The old File, and the still-Effective
+revision that points at it, are completely untouched.
+
+**Classification:** CORE-ADJACENT PATCH to `plugins/controlled-documents-resources` (same file
+Milestone 4 already touched) + new dependency on `@hcengineering/drive` for that package. Kept to
+one isolated, heavily-commented block, same bar as every other core-adjacent change in this
+branch.
+
+**Known residual risk, flagged not fixed:** if someone explicitly deletes the *old* File's current
+`FileVersion` from Drive's own version history UI, `OnFileVersionDelete`
+(`server-plugins/drive-resources`) removes the underlying `Blob` — which the *new* File's initial
+version also references, breaking its preview/download too. This only happens on a deliberate,
+manual version-history deletion (never during normal use), and Drive itself has no existing
+protection against deleting a version that's in active use elsewhere, so this isn't a regression
+this milestone introduces so much as an existing Drive gap this milestone's design now depends on
+not being hit. Worth hardening later (e.g. a reference count, or blocking `FileVersion` deletion
+for blobs referenced by more than one File) but out of scope for this MVP.
+
+### Part B — PG-008: audit trail
+
+**Classification: verified already-working, nothing built.** Confirmed by reading
+`server-plugins/activity-resources/src/utils.ts` and `index.ts`: `TxMixin` transactions are
+explicitly handled alongside `TxUpdateDoc` when generating activity messages (`core.class.TxMixin`
+appears in the same switch/dispatch as `TxUpdateDoc`, and `updateMixin4Doc`-style diffing is
+applied to mixin field changes same as regular field changes). Since linking/changing a Controlled
+Document's file is a `TxMixin` on `qmsControlledFile.mixin.ControlledFile` (Milestone 3's
+`createMixin`/`updateMixin` calls), it already generates an activity entry, visible in the
+existing `DocumentHistory` tab (`documentRes.string.HistoryTab` in `EditDocPanel.svelte`) — no new
+code needed. Combined with Huly's core being transaction-log based (every `Tx` persisted,
+nothing editable/deletable after the fact), this satisfies "implement revision history and event
+tracking" for actual changes.
+
+**Explicitly out of scope:** logging *rejected* attempts (someone tried to replace an Effective
+file and was blocked) is not implemented. The brief asks to prevent silent modification and to
+track real events — it doesn't ask for a log of blocked attempts, and Part A's middleware already
+surfaces a clear error to the user in the moment, so there's no silent failure to compensate for.
+If audit-grade "attempted tampering" logging becomes a real requirement (e.g. for IATF evidence of
+control effectiveness), that's a deliberate follow-up, not an oversight.
+
+### Rollback
+
+This milestone's blast radius is a live production risk if the lock over- or under-blocks, so:
+
+1. **Fastest rollback (no revert needed):** remove the one line
+   `QmsControlledFileLockMiddleware.create,` from the `middlewares` array in
+   `server/server-pipeline/src/pipeline.ts` and redeploy the transactor — the lock is inert the
+   moment it's out of the pipeline, no data was ever written by it (it only throws, never
+   mutates), so nothing needs cleaning up.
+2. **Full rollback:** `git revert` this milestone's commits. The `server-plugins/qms-controlled-
+   file` package can be deleted entirely with zero data-model impact (it holds no schema, no
+   `createModel`, nothing in `models/`).
+3. **The docutils.ts fix is independent** of Part A and safe to keep even if Part A is rolled
+   back — it only changes what a new revision's `controlledFile` points at, it doesn't enforce
+   anything itself. Revert it separately only if the "new File per revision" behavior itself is
+   unwanted.
+4. No data migration exists in either direction — nothing written by this milestone is referenced
+   by anything else if removed.
+
+### Manual verification steps
+
+1. `rush install` (new package) → `rush build` → `rush bundle` → `rush docker:build` (the
+   middleware runs in the transactor/server process, not a separate pod, so a full rebuild is
+   needed, not just a frontend bundle) → `docker compose -f dev/docker-compose.yaml up -d
+   --force-recreate`.
+2. **Negative path:** open a Controlled Document with a linked Drive file, send it through
+   Review → Approval → Effective. On the **File** tab, attempt to upload a new version (or use
+   Drive directly to upload a new version to that same File). Expect a clear rejection error
+   naming the controlling Effective document, not a silent failure or a generic 500.
+3. Still on that Effective document's linked File in Drive: attempt "restore an older version".
+   Expect the same rejection.
+4. **Positive path:** create a new revision from that Effective document (Draft). Confirm the
+   File tab shows a file linked (Milestone 4 behavior) and that it is a **different** File than
+   the original (check via Drive, or compare the file's identity in dev tools) — then upload a
+   new version to it. Expect success, and confirm the *original* Effective revision's File tab is
+   completely unaffected (same file, same preview, same version count as before).
+5. Confirm a rich-text-only Controlled Document (no linked file) is entirely unaffected by any of
+   this — the middleware never matches a `Document` without the `ControlledFile` mixin's
+   `controlledFile` field set.
+6. Confirm renaming a linked file's title on an Effective document still works (deliberately not
+   blocked).
+
+### Follow-up decisions flagged, not made unilaterally
+
+- **Residual blob-sharing risk** on manual version-history deletion — see above; not fixed in
+  this milestone.
+- **Logging rejected attempts** — deliberately out of scope; see Part B above.
+- **The old File's own version history keeps growing forever** after a document line is
+  superseded (each revision's File is independent now, so this is actually *less* of a growth
+  concern than before — each File's version count only reflects that one revision's own edit
+  history, not the whole document lineage). No cleanup/archival built; not asked for.
