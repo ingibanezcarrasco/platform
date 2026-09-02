@@ -29,6 +29,7 @@ import { createModel as coreModel } from '@hcengineering/model-core'
 import { desktopDownloadsId, createModel as desktopDownloadsModel } from '@hcengineering/model-desktop-downloads'
 import { desktopPreferencesId, createModel as desktopPreferencesModel } from '@hcengineering/model-desktop-preferences'
 import { driveId, createModel as driveModel } from '@hcengineering/model-drive'
+import { qmsOfficePreviewId, createModel as qmsOfficePreviewModel } from '@hcengineering/model-qms-office-preview'
 import gmail, { gmailId, createModel as gmailModel } from '@hcengineering/model-gmail'
 import { guestId, createModel as guestModel } from '@hcengineering/model-guest'
 import hr, { hrId, createModel as hrModel } from '@hcengineering/model-hr'
@@ -414,6 +415,9 @@ export default function buildModel (): Builder {
       }
     ],
     [driveModel, driveId],
+    // QMS Milestone 2 (PG-001/PG-002): registers a FilePreviewExtension only, no user-facing
+    // app/toggle — always active, like e.g. [presenceModel, presenceId] below.
+    [qmsOfficePreviewModel, qmsOfficePreviewId],
     [
       documentsModel,
       documentsId,

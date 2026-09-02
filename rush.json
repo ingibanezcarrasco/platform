@@ -1922,6 +1922,21 @@
       "shouldPublish": false
     },
     {
+      "packageName": "@hcengineering/qms-office-preview",
+      "projectFolder": "plugins/qms-office-preview",
+      "shouldPublish": true
+    },
+    {
+      "packageName": "@hcengineering/qms-office-preview-resources",
+      "projectFolder": "plugins/qms-office-preview-resources",
+      "shouldPublish": false
+    },
+    {
+      "packageName": "@hcengineering/model-qms-office-preview",
+      "projectFolder": "models/qms-office-preview",
+      "shouldPublish": false
+    },
+    {
       "packageName": "@hcengineering/server-drive",
       "projectFolder": "server-plugins/drive",
       "shouldPublish": false
