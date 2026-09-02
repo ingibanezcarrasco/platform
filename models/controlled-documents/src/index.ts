@@ -345,6 +345,15 @@ export function createModel (builder: Builder): void {
             key: 'labels'
           }
         },
+        // QMS Milestone 6 (PG-016): "Effective Date" column for the Document Registry view
+        // (the pre-existing "Library" special view, which already renders this Viewlet across
+        // all Projects with status/category/owner filtering — see docs/qms-extensions.md).
+        // `effectiveDate` is declared on `ControlledDocument`, not the base `Document` class
+        // this Viewlet attaches to, but `Viewlet.config` accepts a plain field-key string for
+        // any class in the hierarchy (same as the existing bare `'modifiedOn'` entry below) and
+        // is not statically checked against `attachTo` — the default Timestamp presenter is used,
+        // rendering blank for the rare non-controlled `Document`.
+        { key: 'effectiveDate', label: documents.string.EffectiveDate },
         'modifiedOn'
       ],
       options: {
