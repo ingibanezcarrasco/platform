@@ -44,6 +44,8 @@ import documents, {
   createControlledDocFromTemplate as controlledDocFromTemplate
 } from '@hcengineering/controlled-documents'
 import { getCurrentEmployee } from '@hcengineering/contact'
+// QMS Milestone 4 (PG-004): base plugin, id-only import — see the carry-forward block below.
+import qmsControlledFile, { type ControlledFile } from '@hcengineering/qms-controlled-file'
 import documentsRes from './plugin'
 import { getDocumentVersionString } from './utils'
 
@@ -163,6 +165,20 @@ export async function createNewDraftForControlledDoc (
     await ops.updateMixin(newDraftDocId, documents.class.Document, space, documents.mixin.DocumentTemplate, {
       sequence: template.sequence,
       docPrefix: template.docPrefix
+    })
+  }
+
+  // QMS Milestone 4 (PG-004): carry the linked Drive file forward onto the new revision.
+  // Mixin data does not copy automatically to a new document id — without this, creating a
+  // new revision from a file-based Controlled Document would silently lose its file link,
+  // and the new revision's Controlled File tab would show "no file linked". The new revision
+  // points at the *same* Drive File; a new FileVersion is expected to be uploaded to it during
+  // this revision's Draft/Review cycle, mirroring how Drive itself only ever creates a new
+  // FileVersion (never a new File) for a new version of the same content.
+  if (hierarchy.hasMixin(document, qmsControlledFile.mixin.ControlledFile)) {
+    const controlledFile = hierarchy.as<Document, ControlledFile>(document, qmsControlledFile.mixin.ControlledFile)
+    await ops.updateMixin(newDraftDocId, documents.class.Document, space, qmsControlledFile.mixin.ControlledFile, {
+      controlledFile: controlledFile.controlledFile
     })
   }
 
