@@ -47,6 +47,8 @@ import presence, { presenceId } from '@hcengineering/presence'
 import print, { printId } from '@hcengineering/print'
 import { processId } from '@hcengineering/process'
 import { productsId } from '@hcengineering/products'
+import { qmsOfficePreviewId } from '@hcengineering/qms-office-preview'
+import { qmsControlledFileId } from '@hcengineering/qms-controlled-file'
 import { questionsId } from '@hcengineering/questions'
 import { recruitId } from '@hcengineering/recruit'
 import rekoni from '@hcengineering/rekoni'
@@ -111,6 +113,7 @@ import '@hcengineering/preference-assets'
 import '@hcengineering/print-assets'
 import '@hcengineering/process-assets'
 import '@hcengineering/products-assets'
+import '@hcengineering/qms-controlled-file-assets'
 import '@hcengineering/questions-assets'
 import '@hcengineering/recruit-assets'
 import '@hcengineering/request-assets'
@@ -368,6 +371,10 @@ function configureI18n(): void {
     async (lang: string) => await import(`@hcengineering/controlled-documents-assets/lang/${lang}.json`)
   )
   addStringsLoader(productsId, async (lang: string) => await import(`@hcengineering/products-assets/lang/${lang}.json`))
+  addStringsLoader(
+    qmsControlledFileId,
+    async (lang: string) => await import(`@hcengineering/qms-controlled-file-assets/lang/${lang}.json`)
+  )
   addStringsLoader(
     questionsId,
     async (lang: string) => await import(`@hcengineering/questions-assets/lang/${lang}.json`)
@@ -633,6 +640,20 @@ export async function configurePlatform() {
   addLocation(bitrixId, async () => await import(/* webpackChunkName: "bitrix" */ '@hcengineering/bitrix-resources'))
   addLocation(requestId, async () => await import(/* webpackChunkName: "request" */ '@hcengineering/request-resources'))
   addLocation(driveId, async () => await import(/* webpackChunkName: "drive" */ '@hcengineering/drive-resources'))
+  // QMS Milestone 2 (PG-001/PG-002): this addLocation was missing from the Milestone 2 commit —
+  // without it the platform never knows which chunk to load qms-office-preview's
+  // FilePreviewExtension component from, so the Office preview silently never resolved.
+  // Fixed here as part of Milestone 3 review.
+  addLocation(
+    qmsOfficePreviewId,
+    async () => await import(/* webpackChunkName: "qms-office-preview" */ '@hcengineering/qms-office-preview-resources')
+  )
+  // QMS Milestone 3 (PG-003): Controlled File tab component.
+  addLocation(
+    qmsControlledFileId,
+    async () =>
+      await import(/* webpackChunkName: "qms-controlled-file" */ '@hcengineering/qms-controlled-file-resources')
+  )
   addLocation(supportId, async () => await import(/* webpackChunkName: "support" */ '@hcengineering/support-resources'))
 
   addLocation(
