@@ -2772,6 +2772,11 @@
       "shouldPublish": false
     },
     {
+      "packageName": "@hcengineering/server-qms-controlled-file",
+      "projectFolder": "server-plugins/qms-controlled-file",
+      "shouldPublish": false
+    },
+    {
       "packageName": "@hcengineering/model-rating",
       "projectFolder": "models/rating",
       "shouldPublish": false
